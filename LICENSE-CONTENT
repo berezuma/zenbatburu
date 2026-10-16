@@ -1,0 +1,32 @@
+Testuak, grafikoak eta bistaratzeak / Texts, graphics and visualisations
+=======================================================================
+
+Copyright (c) 2026 Beñat
+
+Biltegi honetako testu editorialak eta bistaratzeak, euskaraz zein gaztelaniaz,
+Creative Commons Attribution 4.0 International (CC BY 4.0) lizentziapean daude.
+
+The editorial texts and visualisations in this repository, in both Basque and
+Spanish, are licensed under Creative Commons Attribution 4.0 International.
+
+    «Zenbat buru?», Beñat. CC BY 4.0.
+
+    https://creativecommons.org/licenses/by/4.0/deed.eu
+    https://creativecommons.org/licenses/by/4.0/
+
+KODEA / CODE
+------------
+Kodea (`*.py`, `*.js`, `page.*.html`) MIT lizentziapean dago: ikus LICENSE.
+The code is MIT licensed: see LICENSE.
+
+DATUAK / DATA
+-------------
+Jatorrizko datuak Bizkaiko Foru Aldundiarenak dira, Open Data Bizkaia atariaren
+bidez banatuak, eta atari horrek ezartzen dituen baldintzen pean daude.
+
+    https://www.opendatabizkaia.eus/es/catalogo/explotaciones-ganaderas
+
+Arrazen egoera ofiziala 81/2015 Dekretuaren eranskinetik dator (Euskal Arraza
+Autoktonoen Katalogo Ofiziala, EHAA 110, 2015-06-15), xedapen ofizial bat.
+
+    https://www.euskadi.eus/bopv2/datos/2015/06/1502621a.pdf

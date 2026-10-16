@@ -1,0 +1,1021 @@
+<script>
+/* ===========================================================================
+   URTEAREN FORMA · bistaratze-kodea
+
+   Kanpo-liburutegirik gabe. Hiru zati:
+
+   1) DEKODEA. Animalia bakoitza hiru zenbakitan dago gordeta (eguna, urtea,
+      espeziea eta sexua zenbaki bakarrean bilduta; arraza eta udalerria byte
+      bana). 84.034 animalia, 336 KB gordinean.
+   2) ERAZTUNA. Eszena nagusia canvas bat da: animalia bakoitza marratxo
+      erradial bat, bere jaiotze-eguneko angeluan. Marratxoak ez dira inoiz
+      berriro sortzen — dauden lekutik mugitzen dira beti, jarraitutasunak
+      argudioa eusten baitu: eraztun handi bakarra bost eraztun txiki
+      bihurtzen denean, animalia berberak ikusten dituzu banatzen.
+   3) TAULAK. SVG eta HTML, zifra zehatzak behar direnerako.
+
+   Angelua ez da inoiz aldatzen eszena batetik bestera: eguna → angelua
+   mapaketa bakarra da orri osoan. Horregatik marratxoak erradialki bakarrik
+   mugitzen dira, eta begiak jarraitu ahal die.
+=========================================================================== */
+(() => {
+"use strict";
+
+const RAW = JSON.parse(document.getElementById("ab-data").textContent);
+
+/* ----------------------------------------------------------------- dekodea */
+function unpack(s, Type){
+  const bin = atob(s), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new Type(u.buffer, 0, bin.length / Type.BYTES_PER_ELEMENT);
+}
+const W  = unpack(RAW.w,  Uint16Array);   // eguna | urtea | espeziea | sexua
+const FA = unpack(RAW.fa, Uint8Array);    // arraza-familiaren indizea
+const MU = unpack(RAW.mu, Uint8Array);    // udalerriaren indizea
+const N  = RAW.n;
+
+const DAY = i => W[i] & 511;
+const YR  = i => (W[i] >> 9) & 3;
+const SPI = i => (W[i] >> 11) & 7;
+const SEX = i => (W[i] >> 14) & 1;        // 0 emea, 1 arra
+
+/* Espeziea → gurpila. Zortzi mando daude: astoen gurpilean doaz, astoekin
+   duten ahaidetasunagatik, eta metodologian esaten da. */
+const SP_KEY  = ["behi","ardi","ahuntz","zaldi","asto","mando"];
+const WHEEL   = [0, 1, 2, 3, 4, 4];
+const NWHEEL  = 5;
+const COLOR   = ["#b4552f","#3f6b63","#9a7b22","#4a4f8c","#7b5570","#7b5570"];
+const INK     = "#1d1a14";
+const INK_DIM = "rgba(29,26,20,.10)";
+
+/* ----------------------------------------------------------------- hizkuntza */
+const T = {
+eu:{
+  lang:"eu", loc:"eu-ES",
+  skip:"Jauzi edukira",
+  brand:"Open Data Bizkaia · abeltzaintzako erregistroa",
+  figureUnit:"abere, hiru urtean",
+  title:"Zenbat buru?",
+  stand:"Bizkaian jaiotzen den abere bakoitzak egun bat du erregistroan. Hiru urteko egunak elkarren gainean jarrita, espezie bakoitzak forma bat agertzen du — eta formak esaten du zer den baserria gaur.",
+  dateline:"Beñat · Open Data Bizkaia, abeltzaintzako ustiategien erregistroa, 2023–2025",
+  cue:"Egin behera",
+  stageTitle:"Jaiotzen eraztuna",
+  rN:"Abereak", rPeak:"Gailurra",
+  steps:[
+    {h:"Urte bat, eraztun bat", n:"84.034",
+     p:"Eraztuna urte bat da: urtarrilak 1 goian, eta ordulariaren norabidean. Marratxo bakoitza abere bat da, bere jaiotze-egunean jarrita. Hiru urte daude hemen, elkarren gainean."},
+    {h:"Bost espezie, bost kolore", n:"5",
+     p:"Behiak, ardiak, ahuntzak, zaldiak eta astoak — eta zortzi mando, astoen koloreaz. Kolorea espeziea da, eta orri osoan ez da beste ezertarako erabiltzen. Eraztunak lodiera desberdina du lekuaren arabera: hor dago istorioa."},
+    {h:"Eta banatzen direnean", n:"",
+     p:"Espezie bakoitza bere gurpilera doa. Orain argi dago zergatik zen eraztun handia hain irregularra: bakoitzak bere egutegia du, eta ez dute bat egiten."},
+    {h:"Hamabi egun luzeegi", n:"13.521",
+     p:"Begiratu hilabete bakoitzaren lehen eguna: hamabi zutabe, besteak baino askoz luzeagoak. Ardien % 38,6 eta ahuntzen % 38,0 hilaren 1ean daude erregistratuta; behien % 4,5 bakarrik. Ardiak ez du egutegiari begira erditzen: erregistratzaileak ez daki eguna, eta hilaren lehena idazten du. Zutabeak moztuta daude; puntan benetako kopurua dago."},
+    {h:"Arkumeak neguan", n:"% 58,3",
+     p:"Egunak ez dira fidagarriak; hilabeteak bai. Eta hilabeteek argi esaten dute: erregistratutako arkumeen % 58,3 urtarrilean eta otsailean jaiotzen da. Ardiak udazkenean estaltzen dira, eta arkumea negu-amaieran behar da, belarra hasten denerako."},
+    {h:"Moxalak udaberrian", n:"% 60,8",
+     p:"Zaldiek beste hiru hilabete dituzte: moxalen % 60,8 apirilean eta maiatzean jaiotzen da, mendira igo aurretik. Urtarrilean hogeita hiru aldiz gutxiago jaiotzen dira: 74 moxal, apirileko 1.709en aldean."},
+    {h:"Eta hona datorrena", n:"% 90,9",
+     p:"Orain emeak kanpora eta arrak barrura. Behietan erdi eta erdi da, biologiak agintzen duen bezala. Ardietan erregistratutako % 90,9 emeak dira. Biologiak ez du hori egiten."}
+  ],
+  proseKicker:"Zer dago barruan",
+  proseTitle:"Erregistroa ez da jaiotzen zerrenda; gelditzen direnen zerrenda da",
+  pull:"Arkumeen % 90,9 emeak dira. Horrek ez du esaten zer jaio den: zer idatzi den esaten du.",
+  prose:[
+    "Bizkaiko abeltzaintza-erregistroak <b>84.034 abere</b> ditu 2023tik 2025era: 50.194 behi, 22.122 ardi, 5.644 ahuntz, 5.403 zaldi, 663 asto eta zortzi mando. Bakoitzak identifikazio-zenbaki bat, jaiotze-data, sexua, arraza eta ustiategi bat ditu. Ez dago izen-abizenik: ustiategiak kodez daude.",
+    "Lehen zifra deigarria sexua da. Behietan emeak % 51,9 dira eta arrak % 48,1 — biologiak hori ematen du. Ardietan, aldiz, erregistratutako abereen <b>% 90,9 emeak</b> dira, eta ahuntzetan % 87,5. Ardiek ez dituzte hamar aldiz ahari gutxiago egiten.",
+    "Azalpena erregistroan bertan dago: abere guztiak ez dira une berean identifikatzen, eta ustiategitik lehenago ateratzen direnak — arkume gazteak, batez ere — ez dira inoiz zerrenda honetara iristen. Erregistroak ikusten duena ez da jaio dena; <b>gelditzeko zena</b> da. Datuak ez dira horregatik okerragoak: beste gauza bat esaten dute, eta jakin behar da zer.",
+    "Gauza bera gertatzen da egunarekin. Hiru urtean erregistratutako abereen <b>% 16,1 hilabete baten lehen egunean</b> dago idatzita — 13.521 abere hamabi egunetan. Behietan % 4,5 besterik ez da, baina ardietan % 38,6 eta ahuntzetan % 38,0. Egun zehatza ez da beti jakina, eta hilaren lehena idazten da. Horregatik ez da hemen inoiz egun bati buruzko baieztapenik egiten: <b>hilabetea da neurri fidagarria</b>.",
+    "Bigarren zifra beherakada da. Hiru urtean jaiotzak <b>29.619tik 26.077ra</b> jaitsi dira, % 12. Baina ez da orokorra: behietan ez dago aldaketarik (16.888 eta 16.795), eta zaldietan ere ez. Jaitsiera ardietan dago (% 28), ahuntzetan (% 43) eta astoetan (% 33). Desagertzen dena ez da «abeltzaintza»: artaldea da.",
+    "Eta hirugarrena arrazak dira. 92 arraza-familia daude erregistroan, baina batek — mestizoek — <b>31.868 abere</b> biltzen ditu: hiru aberetik bat baino gehiago. Muturrean, arraza bat hiru urtean abere bakarrarekin: hannoveranoa, normanda, limiana. Tartean daude Euskal Herriko arrazak, eta horiek badute katalogo ofizial bat."
+  ],
+  catKicker:"81/2015 Dekretua",
+  catTitle:"Katalogo ofizialak hamalau arraza babesten ditu. Erregistroak hamaika ikusten ditu",
+  catLede:"Euskal Arraza Autoktonoen Katalogo Ofizialak (81/2015 Dekretua, EHAA 110, 2015-06-15) arrisku-maila bat ematen dio arraza bakoitzari: kritikoa, arriskuan, edo arriskurik gabe. Hemen maila horren ondoan dago erregistroak dioena: zenbat jaio diren benetan, urtez urte. Ez dute bat egiten.",
+  catWarn:"Hiru arrazak — Euskal Txerria, Euskal Oiloa eta Euskal Antzara, hirurak «kritiko» — ez dute jaiotzarik erregistro honetan. Ez dira falta: erregistro honek banan-banan identifikatzen diren espezieak biltzen ditu (behiak, ardiak, ahuntzak, zaldiak, astoak), eta txerriak eta hegaztiak ez dira horrela erregistratzen. Haien jaiotzak ez dira hemen ikusten.",
+  catCols:{state:"81/2015", births:"Jaiotzak", yrs:"2023 · 2024 · 2025"},
+  states:{"Crítica":"Kritikoa","En peligro":"Arriskuan","No en riesgo":"Arriskurik gabe"},
+  findKicker:"92 arraza-familia",
+  findTitle:"Bilatu arraza bat",
+  findLede:"Idatzi izen bat edo iragazi espeziearen arabera. «Katalogoan» botoiak 81/2015 Dekretuko arrazak bakarrik erakusten ditu. Zutabeen izenburuak klikatuta ordenatzen da; CSV gisa deskarga daiteke.",
+  ariaSearch:"Bilatu arraza-izena", ariaClear:"Garbitu bilaketa",
+  ariaFilt:"Iragazi espeziearen arabera",
+  filt:{all:"Denak", behi:"Behiak", ardi:"Ardiak", ahuntz:"Ahuntzak", zaldi:"Zaldiak", kat:"Katalogoan"},
+  csv:"CSV", csvFile:"bizkaia-arrazak.csv",
+  cols:{name:"Arraza", sp:"Espeziea", off:"81/2015", t:"Guztira", y23:"2023", y24:"2024", y25:"2025", fem:"Emeak", var:"Aldaerak"},
+  count:n => `${n} arraza-familia`,
+  countOf:(n,t) => `${n} arraza-familia ${t}(e)tik`,
+  none:"Ez da arrazarik aurkitu",
+  brLegend:"Barrak hiru urteak dira: 2023, 2024 eta 2025. «Aldaerak» zutabeak esaten du iturriak izen bat baino gehiago erabiltzen duela familia horretarako.",
+  calKicker:"Hamabi hilabete",
+  calTitle:"Espezie bakoitzaren egutegia",
+  calLede:"Hilabetez hilabete, zenbat abere jaio diren hiru urtean. Hau da neurri fidagarria: egunak biribilduta egon daitezke, hilabeteak ez. Kurba bakoitzak bere eskala du: kontua ez da zein espezie den handiagoa, baizik eta bakoitza noiz jaiotzen den.",
+  calLegend:"Pasatu gainetik edo erabili teklatua zifra zehatzak ikusteko.",
+  moveKicker:"Gero zer",
+  moveTitle:"Jaio ondoren, mugitu egiten dira",
+  moveLede:"Erregistro berak abereen mugimenduak ere gordetzen ditu: 63.809 gida hiru urtean, 4.708.071 abere. Gehienak oiloak dira, 3.250eko sortetan. Baina lau hankako abereetan mugimenduen arrazoi nagusia beste bat da: mendia.",
+  moveWarn:"Mugimendu bakoitza gida bat da, ez abere bat: abere bera urtean behin baino gehiagotan mugi daiteke, eta sorta batek 35.840 abere izan ditzake. Horregatik ematen dira bi zifrak beti, gidak eta abereak, eta inoiz ez dira jaiotzen zifrarekin batzen.",
+  flow:{
+    a:{h:"Nora", p:"Helmugaren araberako abere-kopurua. Euskadi da nagusia — iturriaren kategoria da, eta Nafarroa beste ilara bat da —, baina sorta handienak kanpora doaz: Nafarroara 1.092.564 abere 2.832 gidatan bakarrik."},
+    b:{h:"Mendira", p:"Transhumantzia-marka duten mugimenduak, abereen ehunekotan. Ardietan % 65 dira, zaldietan % 64, ahuntzetan % 59. Oiloetan, mila artean bat."},
+    c:{h:"Zenbat batera", p:"Gida bakoitzeko abere-kopuruaren mediana. Astoa bakarrik mugitzen da; oiloa hiru milaka."},
+    d:{h:"Barrukoa eta kanpokoa", p:"Gidak, jatorria eta helmuga Bizkaian dauden ala ez."}
+  },
+  flowIn:"Bizkaia barruan", flowOut:"Bizkaitik kanpora", flowBack:"Bizkaira",
+  endKicker:"Amaiera",
+  endTitle:"Zer esaten du 117 zenbakiak",
+  end:[
+    "Betizua Euskal Herriko behia da, basatia, mendian bizi dena. Katalogo ofizialak «arriskuan» du sailkatuta 2015etik. Hiru urtean <b>117 betizu</b> jaio dira Bizkaian: 41, 34 eta 42. Urtean berrogei inguru.",
+    "Azpigorri ahuntza «kritiko» dago sailkatuta, eta jaiotzak <b>698tik 337ra</b> jaitsi dira bi urtean — erdira. Sasi Ardia «arriskuan» dago: 827tik 546ra. Carranzana: 1.309tik 976ra.",
+    "Baina sailkapenak ez du dena esaten. Monchina behia ere «kritiko» dago, eta <b>gora</b> doa: 348tik 440ra. Terreña «arriskuan» dago, eta gora: 639tik 795era. Pottoka «arriskuan», eta gora: 96tik 174ra. Euskal Herriko Mendiko Zaldia «arriskuan», eta gora: 316tik 557ra.",
+    "2015eko sailkapen batek ezin du esan zer ari den gertatzen aurten. Erregistroak bai, urtero. Eta dioena ez da «arraza autoktonoak desagertzen ari dira», baizik eta <b>batzuk bai eta beste batzuk ez</b>, eta ez dira arrisku-mailek aurreikusten zituztenak."
+  ],
+  endLine:"Berrogei betizu urtean. Erregistroak zenbatzen ditu; beste inork ez.",
+  methodKicker:"Nola egin den",
+  methodTitle:"Metodologia",
+  method:[
+    {h:"Iturria", p:["<b>Open Data Bizkaia</b>, <code>explotaciones-ganaderas</code> datu-multzoa, CKAN <code>datastore_search</code> APIaren bidez. Hiru taula-mota pakete berean: ustiategien erregistroa (52.488 ilara, 2021–2025), jaiotzak (84.058 ilara) eta mugimenduak (63.809 gida).","Ez da beste daturik erabili, salbuespen bakarra arrazen egoera ofiziala: 81/2015 Dekretua, EHAA 110, 2015-06-15."]},
+    {h:"Zergatik 2023–2025", p:["Jaiotzen taulan 84.058 ilara daude, baina 13 urte osatu gabeetakoak dira (2008tik 2026ra sakabanatuta). Hiru urte osoak bakarrik hartu dira. Beste 11 ilarak identifikazio-zenbakia errepikatzen zuten, eta behin bakarrik zenbatu dira: <b>84.034 animalia</b>."]},
+    {h:"Hitzak", p:["Erregistro honetan dagoena ez da «animalia» orokorra: <b>abereak</b> dira — abeltzaintzako ustiategietan jaioak eta banan-banan identifikatuak. Horregatik erabiltzen da <i>abere</i> orri osoan eta ez <i>animalia</i>: txakur bat ere animalia da, baina ez dago hemen, eta basurdeak ere ez, salbu eta ustiategi batetik mugitzen direnean. Gaztelaniazko bertsioan <i>ganado</i> eta <i>cabezas</i> dira termino baliokideak."]},
+    {h:"Egunak eta hilabeteak", p:["Erregistratutako abereen % 16,1 hilabete baten lehen egunean dago idatzita: ardietan % 38,6, behietan % 4,5. Egun zehatza ez dago beti jakinda, eta hilaren lehena idazten da. Horregatik ez da egun bati buruzko baieztapenik egiten orrian, eta hilabetea erabiltzen da neurri gisa. Eraztunean zutabe horiek moztuta marrazten dira, eta benetako kopurua puntan idazten da."]},
+    {h:"Arrazak nola batu diren", p:["Iturriak arraza bera bi mailatan etiketatzen du: batzuetan familia («LATXA») eta batzuetan aldaera («LATXA CARA NEGRA»). Horrek aldaeren serieak fidagarri gabe uzten ditu: aldaera baten beherakada etiketatze-aldaketa bat izan daiteke. Dena <b>familia mailan</b> neurtzen da, eta aldaerak informazio gisa gordetzen dira, ez serie gisa."]},
+    {h:"Maiuskulak eta kodeak", p:["Iturriak maiuskulak eta minuskulak nahasten ditu («FRISONA», «Conjunto Mestizo»), eta kodeak Excel moduan bilduta datoz (<code>=&quot;022&quot;</code>). Biak normalizatu dira. Eremuen izenak elebidunak dira («UDALERRIA/MUNICIPIO»), eta izen bat bestearen barruan dago: <code>LUGAR_DESTINO</code> bilatzeak <code>CODIGO_LUGAR_DESTINO</code> ere harrapatzen du, eta kodea itzultzen du izenaren ordez. Datu-multzo hau berrerabiltzen duenak zehatz bilatu behar du, azpikateaz fidatu gabe."]},
+    {h:"Sexuaren ratioa", p:["Behietan % 51,9 emeak dira; ardietan % 90,9. Ez da hemen esaten zergatik gertatzen den — erregistroak ez du azaltzen. Esaten dena da erregistroak ez dituela jaiotza guztiak biltzen, eta zifra hori dela horren frogarik argiena."]},
+    {h:"Zer ez duen ikusten", p:["Txerriak eta hegaztiak ez dira banan-banan identifikatzen erregistro honetan, eta beraz Euskal Txerria, Euskal Oiloa eta Euskal Antzara — hirurak «kritiko» katalogo ofizialean — zero jaiotzarekin agertzen dira. Hori erregistroaren muga da, ez arrazen egoera."]},
+    {h:"Eraztuna", p:["Eszena nagusia eskuz idatzitako <b>canvas</b> bat da, kanpo-liburutegirik gabe: 84.034 marratxo erradial fotograma bakoitzean. Eguna → angelua mapaketa bakarra da eszena guztietan, eta horregatik marratxoak erradialki bakarrik mugitzen dira: begiak abere berberak jarraitu ahal die eraztun handia bost gurpil bihurtzen denean."]},
+    {h:"Zifra bakoitza", p:["Orrian argitaratutako 53 zifra iturri gordinetik berriro kalkulatzen dira, trinkotzetik erabat independenteki (<code>verify.py</code>): beste kode-bide bat, beste egitura bat. Grafikoak eta taulak datu trinkotuetatik sortzen dira zuzenean; egiaztapenak eskuz idatzitako testuko zifrak ere kontrolatzen ditu, eta hiru desadostasun atzeman zituen argitaratu aurretik — bi ehuneko biribilduta zeuden, eta urteko guztizko bat bikoiztuak kendu aurretikoa zen. Prozesu osoa errepikagarria da: script bat jaisteko, beste bat garbitzeko, beste bat egiaztatzeko, beste bat muntatzeko."]},
+    {h:"Erabilgarritasuna", p:["Elebiduna, egoera URLan gordetzen duena esteka partekagarrietarako, teklatuz nabigagarria, CSV gisa deskargagarria, pantaila txikietara egokitua (390 px-tik gora probatuta) eta paperean inprimagarria. <code>prefers-reduced-motion</code> eskatzen duenari animazioak eten egiten zaizkio. JavaScriptik gabe, albistearen laburpena agertzen da, bi hizkuntzatan."]}
+  ],
+  footBy:"Beñat · 2026", footSource:"Iturria: Open Data Bizkaia",
+  share:"Partekatu", shared:"Kopiatuta",
+  months:["Urt","Ots","Mar","Api","Mai","Eka","Uzt","Abu","Ira","Urr","Aza","Abe"],
+  monthsLong:["urtarrila","otsaila","martxoa","apirila","maiatza","ekaina","uztaila","abuztua","iraila","urria","azaroa","abendua"],
+  sp:{behi:"Behiak",ardi:"Ardiak",ahuntz:"Ahuntzak",zaldi:"Zaldiak",asto:"Astoak",mando:"Mandoak",
+      txerri:"Txerriak",oilo:"Oiloak",antzara:"Antzarak",untxi:"Untxiak",erle:"Erleak",
+      ahate:"Ahateak",uso:"Usoak",indioilar:"Indioilarrak",ratite:"Ratiteak",basurde:"Basurdeak"},
+  female:"emeak", male:"arrak", animals:"abere", guides:"gida",
+  peakOf:(m,n) => `${m}, ${n} abere`
+},
+es:{
+  lang:"es", loc:"es-ES",
+  skip:"Saltar al contenido",
+  brand:"Open Data Bizkaia · registro ganadero",
+  figureUnit:"cabezas de ganado, en tres años",
+  title:"¿Cuántas cabezas?",
+  stand:"Cada cabeza de ganado que nace en Bizkaia tiene un día en el registro. Al superponer los días de tres años, cada especie dibuja una forma — y la forma dice qué es hoy el caserío.",
+  dateline:"Beñat · Open Data Bizkaia, registro de explotaciones ganaderas, 2023–2025",
+  cue:"Desplázate",
+  stageTitle:"El anillo de los nacimientos",
+  rN:"Cabezas", rPeak:"Máximo",
+  steps:[
+    {h:"Un año, un anillo", n:"84.034",
+     p:"El anillo es un año: el 1 de enero arriba, y en el sentido del reloj. Cada marca es un animal, colocado en su día de nacimiento. Aquí hay tres años, superpuestos."},
+    {h:"Cinco especies, cinco colores", n:"5",
+     p:"Bovinos, ovinos, caprinos, equinos y asnos — y ocho mulos, con el color de los asnos. El color es la especie, y no se usa para nada más en toda la página. El anillo tiene un grosor distinto según el lugar: ahí está la historia."},
+    {h:"Y cuando se separan", n:"",
+     p:"Cada especie se va a su rueda. Ahora se ve por qué el anillo grande era tan irregular: cada una tiene su calendario, y no coinciden."},
+    {h:"Doce días demasiado largos", n:"13.521",
+     p:"Mira el primer día de cada mes: doce columnas, ocho veces más largas que las demás. El 38,6 % de los ovinos y el 38,0 % de los caprinos están registrados el día 1; de los bovinos, solo el 4,5 %. La oveja no pare mirando el calendario: quien registra no sabe el día, y escribe el primero del mes. Las columnas están recortadas; en la punta está la cifra real."},
+    {h:"Corderos en invierno", n:"58,3 %",
+     p:"Los días no son fiables; los meses sí. Y los meses lo dicen claro: el 58,3 % de los corderos registrados nace en enero y febrero. Las ovejas se cubren en otoño, y el cordero se necesita a final de invierno, cuando arranca la hierba."},
+    {h:"Potros en primavera", n:"60,8 %",
+     p:"Los equinos tienen otros tres meses: el 60,8 % de los potros nace en abril y mayo, antes de subir al monte. En enero nacen veintitrés veces menos: 74 potros, frente a los 1.709 de abril."},
+    {h:"Y esto es lo que llega", n:"90,9 %",
+     p:"Ahora las hembras hacia fuera y los machos hacia dentro. En bovinos es mitad y mitad, como manda la biología. En ovinos, el 90,9 % de lo registrado son hembras. Eso no lo hace la biología."}
+  ],
+  proseKicker:"Qué hay dentro",
+  proseTitle:"El registro no es la lista de lo que nace; es la lista de lo que se queda",
+  pull:"El 90,9 % de los corderos son hembras. Eso no dice qué ha nacido: dice qué se ha escrito.",
+  prose:[
+    "El registro ganadero de Bizkaia contiene <b>84.034 cabezas de ganado</b> entre 2023 y 2025: 50.194 bovinos, 22.122 ovinos, 5.644 caprinos, 5.403 equinos, 663 asnos y ocho mulos. Cada uno con su número de identificación, fecha de nacimiento, sexo, raza y explotación. No hay nombres de personas: las explotaciones van por código.",
+    "La primera cifra llamativa es el sexo. En bovinos las hembras son el 51,9 % y los machos el 48,1 % — eso es lo que da la biología. En ovinos, en cambio, el <b>90,9 %</b> de las cabezas registradas son hembras, y en caprinos el 87,5 %. Las ovejas no paren diez veces menos machos.",
+    "La explicación está en el propio registro: no todo el ganado se identifica en el mismo momento, y los que salen antes de la explotación —corderos jóvenes, sobre todo— no llegan nunca a esta lista. Lo que el registro ve no es lo que nació; es <b>lo que iba a quedarse</b>. Los datos no son peores por eso: dicen otra cosa, y hay que saber cuál.",
+    "Lo mismo ocurre con el día. El <b>16,1 % de las cabezas registradas</b> en tres años está anotado el día 1 de algún mes — 13.521 cabezas en doce días. En bovinos es solo el 4,5 %, pero en ovinos el 38,6 % y en caprinos el 38,0 %. El día exacto no siempre se conoce, y se escribe el primero del mes. Por eso aquí no se hace nunca ninguna afirmación sobre un día concreto: <b>el mes es la unidad fiable</b>.",
+    "La segunda cifra es la caída. En tres años los nacimientos han bajado de <b>29.619 a 26.077</b>, un 12 %. Pero no es general: en bovinos no hay cambio (16.888 y 16.795), y en equinos tampoco. La caída está en ovinos (28 %), caprinos (43 %) y asnos (33 %). Lo que desaparece no es «la ganadería»: es el rebaño.",
+    "Y la tercera son las razas. Hay 92 familias de razas en el registro, pero una sola —los mestizos— reúne <b>31.868 cabezas</b>: más de uno de cada tres. En el extremo, razas con un solo animal en tres años: hannoveriana, normanda, limiana. Entre medias están las razas vascas, y esas sí tienen un catálogo oficial."
+  ],
+  catKicker:"Decreto 81/2015",
+  catTitle:"El catálogo oficial protege catorce razas. El registro ve once",
+  catLede:"El Catálogo Oficial de Razas Animales Autóctonas Vascas (Decreto 81/2015, BOPV 110, 15-06-2015) asigna a cada raza un nivel de riesgo: crítica, en peligro, o no en riesgo. Aquí, al lado de ese nivel, está lo que dice el registro: cuántas han nacido realmente, año por año. No coinciden.",
+  catWarn:"Tres razas —Euskal Txerria, Euskal Oiloa y Euskal Antzara, las tres «críticas»— no tienen nacimientos en este registro. No faltan: este registro recoge las especies que se identifican individualmente (bovinos, ovinos, caprinos, equinos, asnos), y los cerdos y las aves no se registran así. Sus nacimientos no se ven aquí en absoluto.",
+  catCols:{state:"81/2015", births:"Nacimientos", yrs:"2023 · 2024 · 2025"},
+  states:{"Crítica":"Crítica","En peligro":"En peligro","No en riesgo":"No en riesgo"},
+  findKicker:"92 familias de razas",
+  findTitle:"Busca una raza",
+  findLede:"Escribe un nombre o filtra por especie. El botón «En catálogo» muestra solo las razas del Decreto 81/2015. Se ordena pulsando en las cabeceras; se puede descargar en CSV.",
+  ariaSearch:"Buscar nombre de raza", ariaClear:"Limpiar búsqueda",
+  ariaFilt:"Filtrar por especie",
+  filt:{all:"Todas", behi:"Bovinos", ardi:"Ovinos", ahuntz:"Caprinos", zaldi:"Equinos", kat:"En catálogo"},
+  csv:"CSV", csvFile:"bizkaia-razas.csv",
+  cols:{name:"Raza", sp:"Especie", off:"81/2015", t:"Total", y23:"2023", y24:"2024", y25:"2025", fem:"Hembras", var:"Variantes"},
+  count:n => `${n} familias de razas`,
+  countOf:(n,t) => `${n} de ${t} familias de razas`,
+  none:"No se ha encontrado ninguna raza",
+  brLegend:"Las barras son los tres años: 2023, 2024 y 2025. La columna «Variantes» indica que la fuente usa más de un nombre para esa familia.",
+  calKicker:"Doce meses",
+  calTitle:"El calendario de cada especie",
+  calLede:"Mes a mes, cuántos animales han nacido en tres años. Cada curva tiene su propia escala: la cuestión no es qué especie es mayor, sino cuándo nace cada una.",
+  calLegend:"Pasa por encima o usa el teclado para ver las cifras exactas.",
+  moveKicker:"Y después",
+  moveTitle:"Después de nacer, se mueven",
+  moveLede:"El mismo registro guarda los movimientos de ganado: 63.809 guías en tres años, 4.708.071 cabezas de ganado. La mayoría son gallinas, en lotes de 3.250. Pero en el ganado de cuatro patas el motivo principal de los movimientos es otro: el monte.",
+  moveWarn:"Cada movimiento es una guía, no un animal: el mismo animal puede moverse más de una vez al año, y un lote puede llevar 35.840 cabezas. Por eso se dan siempre las dos cifras, guías y animales, y nunca se suman con la cifra de nacimientos.",
+  flow:{
+    a:{h:"Adónde", p:"Número de cabezas según destino. Euskadi es el principal —es la categoría de la fuente, y Navarra es otra fila—, pero los lotes más grandes van fuera: 1.092.564 cabezas a Navarra en solo 2.832 guías."},
+    b:{h:"Al monte", p:"Movimientos marcados como trashumancia. En ovinos son el 65 % de las cabezas, en caprinos el 59 %, en equinos el 64 %. En gallinas, uno entre mil."},
+    c:{h:"Cuántos a la vez", p:"Mediana de cabezas por guía. El asno se mueve solo; la gallina, por miles."},
+    d:{h:"Dentro y fuera", p:"Guías según si origen y destino están en Bizkaia."}
+  },
+  flowIn:"Dentro de Bizkaia", flowOut:"Fuera de Bizkaia", flowBack:"Hacia Bizkaia",
+  endKicker:"Final",
+  endTitle:"Qué dice el número 117",
+  end:[
+    "El betizu es la vaca vasca, semisalvaje, que vive en el monte. El catálogo oficial la clasifica «en peligro» desde 2015. En tres años han nacido <b>117 betizus</b> en Bizkaia: 41, 34 y 42. Unos cuarenta al año.",
+    "La cabra Azpigorri está clasificada «crítica», y sus nacimientos han caído de <b>698 a 337</b> en dos años: a la mitad. La Sasi Ardi está «en peligro»: de 827 a 546. La Carranzana: de 1.309 a 976.",
+    "Pero la clasificación no lo dice todo. La vaca Monchina también está «crítica», y <b>sube</b>: de 348 a 440. La Terreña está «en peligro», y sube: de 639 a 795. La Pottoka, «en peligro», y sube: de 96 a 174. El Caballo de Monte del País Vasco, «en peligro», y sube: de 316 a 557.",
+    "Una clasificación de 2015 no puede decir qué está pasando este año. El registro sí, cada año. Y lo que dice no es «las razas autóctonas desaparecen», sino que <b>unas sí y otras no</b>, y no son las que los niveles de riesgo anticipaban."
+  ],
+  endLine:"Cuarenta betizus al año. El registro los cuenta; nadie más.",
+  methodKicker:"Cómo se ha hecho",
+  methodTitle:"Metodología",
+  method:[
+    {h:"Fuente", p:["<b>Open Data Bizkaia</b>, conjunto <code>explotaciones-ganaderas</code>, mediante la API CKAN <code>datastore_search</code>. Tres tipos de tabla en el mismo paquete: registro de explotaciones (52.488 filas, 2021–2025), nacimientos (84.058 filas) y movimientos (63.809 guías).","No se ha usado ningún otro dato, con una sola excepción: el estado oficial de las razas, del Decreto 81/2015, BOPV 110, 15-06-2015."]},
+    {h:"Por qué 2023–2025", p:["La tabla de nacimientos tiene 84.058 filas, pero 13 son de años incompletos (dispersos de 2008 a 2026). Se han tomado solo los tres años completos. Otras 11 filas repetían número de identificación y se han contado una sola vez: <b>84.034 animales</b>."]},
+    {h:"Las palabras", p:["Lo que hay en este registro no son «animales» en general: son <b>cabezas de ganado</b>, nacidas en explotaciones ganaderas e identificadas una a una. Por eso se usa <i>ganado</i> y <i>cabezas</i>, y no <i>animal</i> a secas: un perro también es un animal, y aquí no está. En la versión en euskera el término es <i>abere</i>, que significa exactamente eso y no otra cosa."]},
+    {h:"Días y meses", p:["El 16,1 % de las cabezas registradas está anotado el día 1 de algún mes: en ovinos el 38,6 %, en bovinos el 4,5 %. El día exacto no siempre se conoce, y se escribe el primero del mes. Por eso no se hace ninguna afirmación sobre días en toda la página, y la unidad de medida es el mes. En el anillo esas columnas se dibujan recortadas, y la cifra real se escribe en la punta."]},
+    {h:"Cómo se han agrupado las razas", p:["La fuente etiqueta la misma raza en dos niveles: unas veces la familia («LATXA») y otras la variedad («LATXA CARA NEGRA»). Eso deja las series por variedad sin fiabilidad: la caída de una variedad puede ser un cambio de etiquetado. Todo se mide a <b>nivel de familia</b>, y las variedades se guardan como información, no como serie."]},
+    {h:"Mayúsculas y códigos", p:["La fuente mezcla mayúsculas y minúsculas («FRISONA», «Conjunto Mestizo»), y los códigos vienen envueltos al estilo Excel (<code>=&quot;022&quot;</code>). Ambas cosas se han normalizado. Los nombres de campo son bilingües («UDALERRIA/MUNICIPIO»), y un nombre está contenido en otro: buscar <code>LUGAR_DESTINO</code> captura también <code>CODIGO_LUGAR_DESTINO</code> y devuelve el código en lugar del nombre. Quien reutilice este conjunto debe buscar de forma exacta, sin fiarse de la subcadena."]},
+    {h:"La ratio de sexos", p:["En bovinos el 51,9 % son hembras; en ovinos el 90,9 %. Aquí no se afirma por qué ocurre: el registro no lo explica. Lo que se afirma es que el registro no recoge todos los nacimientos, y que esa cifra es la prueba más clara de ello."]},
+    {h:"Qué no ve", p:["Los cerdos y las aves no se identifican individualmente en este registro, y por eso Euskal Txerria, Euskal Oiloa y Euskal Antzara —las tres «críticas» en el catálogo oficial— aparecen con cero nacimientos. Es un límite del registro, no el estado de las razas."]},
+    {h:"El anillo", p:["La escena principal es un <b>canvas</b> escrito a mano, sin librerías externas: 84.034 marcas radiales en cada fotograma. La correspondencia día → ángulo es única en todas las escenas, y por eso las marcas solo se mueven en radio: el ojo puede seguir a los mismos animales cuando el anillo grande se convierte en cinco ruedas."]},
+    {h:"Cada cifra", p:["Las 53 cifras publicadas se recalculan desde la fuente en bruto, de forma totalmente independiente a la compactación (<code>verify.py</code>): otro camino de código, otra estructura. Los gráficos y las tablas salen directamente de los datos compactados; la verificación controla además las cifras escritas a mano en el texto, y detectó tres discrepancias antes de publicar — dos porcentajes redondeados y un total anual previo a eliminar duplicados. Todo el proceso es reproducible: un script para descargar, otro para limpiar, otro para verificar, otro para montar."]},
+    {h:"Usabilidad", p:["Bilingüe, con el estado guardado en la URL para compartir enlaces, navegable con teclado, descargable en CSV, adaptada a pantallas pequeñas e imprimible. A quien pide <code>prefers-reduced-motion</code> se le detienen las animaciones."]}
+  ],
+  footBy:"Beñat · 2026", footSource:"Fuente: Open Data Bizkaia",
+  share:"Compartir", shared:"Copiado",
+  months:["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"],
+  monthsLong:["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"],
+  sp:{behi:"Bovinos",ardi:"Ovinos",ahuntz:"Caprinos",zaldi:"Equinos",asto:"Asnos",mando:"Mulos",
+      txerri:"Cerdos",oilo:"Gallinas",antzara:"Ocas",untxi:"Conejos",erle:"Abejas",
+      ahate:"Patos",uso:"Palomas",indioilar:"Pavos",ratite:"Ratites",basurde:"Jabalíes"},
+  female:"hembras", male:"machos", animals:"cabezas", guides:"guías",
+  peakOf:(m,n) => `${m}, ${n} cabezas`
+}
+};
+
+/* ------------------------------------------------------------------- egoera */
+const S = {
+  lang: "eu",
+  scene: 0,
+  q: "",
+  filt: "all",
+  sort: { col: "t", dir: -1 },
+};
+let t = T.eu;
+
+/* Zenbakiak eskuz formateatzen dira. `Intl`-ek ez du beti `eu-ES` ezagutzen,
+   eta orduan ingelesezko komara jotzen du: «84,034». Euskaraz eta gaztelaniaz
+   milakoen bereizlea puntua da, eta hamartarrena koma. */
+function num(v){
+  const neg = v < 0, s = String(Math.round(Math.abs(v)));
+  let out = "";
+  for (let i = 0; i < s.length; i++){
+    if (i && (s.length - i) % 3 === 0) out += ".";
+    out += s[i];
+  }
+  return (neg ? "\u2212" : "") + out;
+}
+function pct(v, d){
+  const n = Math.abs(v).toFixed(d | 0).replace(".", ",");
+  const s = (v < 0 ? "\u2212" : "") + n;
+  return t.lang === "eu" ? "% " + s : s + " %";
+}
+
+const el = s => document.querySelector(s);
+const els = s => Array.from(document.querySelectorAll(s));
+
+/* Hilabeteen hasierako egunak eraztunerako goian daude (MSTART). */
+const monthOf = d => { let m = 11; while (MSTART[m] > d) m--; return m; };
+
+/* ===========================================================================
+   1 · ERAZTUNA
+   Animalia bakoitza marratxo erradial bat da. Eguna → angelua mapaketa bakarra
+   da eszena guztietan, beraz marratxoak erradialki bakarrik mugitzen dira.
+=========================================================================== */
+
+/* Espezieen indize-zerrendak, behin bakarrik: fotograma bakoitzean espeziez
+   taldekatuta marrazten da, trazu bat kolore bakoitzeko. */
+const MSTART = [0,31,60,91,121,152,182,213,244,274,305,335,365];
+const IS_FIRST = new Uint8Array(366);
+for (let m = 0; m < 12; m++) IS_FIRST[MSTART[m]] = 1;
+
+/* Bi zerrenda espezieko: hilaren lehen egunean erregistratutakoak eta
+   gainerakoak. Hilaren 1a ez da jaiotza-eguna askotan, erregistroaren
+   biribiltzea baizik, eta eszena batek hori erakusten du. */
+const BY_SP = (() => {
+  const a = SP_KEY.map(() => []), b = SP_KEY.map(() => []);
+  for (let i = 0; i < N; i++) (IS_FIRST[DAY(i)] ? a : b)[SPI(i)].push(i);
+  return SP_KEY.map((_, s) => ({ one: Int32Array.from(a[s]), rest: Int32Array.from(b[s]) }));
+})();
+
+/* Angelua eta bere sinua/kosinua egun bakoitzeko: 366 balio, behin. */
+const COS = new Float32Array(366), SIN = new Float32Array(366);
+for (let d = 0; d < 366; d++){
+  const a = (d / 365) * Math.PI * 2 - Math.PI / 2;
+  COS[d] = Math.cos(a); SIN[d] = Math.sin(a);
+}
+
+function drawBox(w, h, forHero){
+  if (forHero){
+    /* Partekatzeko txartelean testua ezkerrean doa eta eraztuna eskuinean.
+       Pantaila estuan eraztuna beherago doa: bestela izenburuaren azpian
+       geratzen da eta biak irakurgaitz bihurtzen dira. */
+    const og = document.documentElement.classList.contains("og");
+    const narrow = !og && w < 700;
+    const m = og ? Math.min(w, h) * 0.98 : narrow ? w * 0.94 : Math.min(w, h) * 0.92;
+    const cx = og ? w * 0.70 : w * 0.5;
+    const cy = narrow ? h * 0.73 : h * 0.5;
+    return { x: cx - m / 2, y: cy - m / 2, w: m, h: m };
+  }
+  /* Pantaila zabalean txartelak eskuinean daude, eta marrazkia ezkerrean.
+     Estuan txartelak behean daude, eta marrazkiak goiko zatia hartzen du:
+     eraztun bat ezin da txartel baten azpian geratu. */
+  const wide = w >= 960, padT = wide ? 84 : 66;
+  const bw = wide ? w * 0.53 : w;
+  const bh = wide ? h - padT - 30 : h * 0.62 - padT;
+  return { x: wide ? w * 0.025 : 6, y: padT, w: bw - 14, h: Math.max(140, bh) };
+}
+
+function wheels(scene, b){
+  const out = [];
+  if (scene <= 1){
+    const m = Math.min(b.w, b.h);
+    const g = { cx: b.x + b.w / 2, cy: b.y + b.h / 2, R: m * 0.27, room: m * 0.145 };
+    for (let i = 0; i < NWHEEL; i++) out.push(g);
+    return out;
+  }
+  if (scene === 4 || scene === 5){
+    const focus = scene === 4 ? 1 : 3;
+    const m = Math.min(b.w, b.h * 0.76);
+    const cw = b.w / 4, sm = Math.min(cw, b.h * 0.2);
+    let k = 0;
+    for (let i = 0; i < NWHEEL; i++){
+      if (i === focus) out.push({ cx: b.x + b.w / 2, cy: b.y + b.h * 0.40,
+                                  R: m * 0.27, room: m * 0.145 });
+      else { out.push({ cx: b.x + cw * (k + 0.5), cy: b.y + b.h * 0.89,
+                        R: sm * 0.26, room: sm * 0.13 }); k++; }
+    }
+    return out;
+  }
+  /* Bost gurpil sareta batean. Zeldaren tamaina bi mugek erabakitzen dute,
+     eta ilaren arteko tartea gurpilaren araberakoa da: bestela zutabeak
+     zabalak direnean hutsune handi bat geratzen da erdian. */
+  const cols = (b.w > b.h * 0.85 && b.w > 560) ? 3 : 2, rows = Math.ceil(NWHEEL / cols);
+  const cw = b.w / cols, cell = Math.min(cw, b.h / rows);
+  const stepY = Math.min(b.h / rows, cell * 1.1);
+  const topY = b.y + (b.h - stepY * rows) / 2;
+  for (let i = 0; i < NWHEEL; i++){
+    const row = Math.floor(i / cols), inRow = i % cols;
+    const inThis = Math.min(cols, NWHEEL - row * cols);
+    const off = (b.w - inThis * cw) / 2;
+    out.push({ cx: b.x + off + cw * (inRow + 0.5), cy: topY + stepY * (row + 0.5),
+               R: cell * 0.25, room: cell * 0.132 });
+  }
+  return out;
+}
+
+/* Eszena bakoitzeko animalia bakoitzaren helmuga. Bi pasada: lehenengoan egun
+   bakoitzean zenbat dauden, bigarrenean bakoitzari bere maila ematen. */
+const bucket = new Int32Array(NWHEEL * 366 * 2);
+const fillK  = new Int32Array(NWHEEL * 366 * 2);
+
+function solve(scene, b, X, Y, LEN, LW, SPK){
+  const wh = wheels(scene, b);
+  const split = scene === 6;
+  bucket.fill(0);
+  for (let i = 0; i < N; i++){
+    const w = WHEEL[SPI(i)];
+    bucket[(w * 366 + DAY(i)) * 2 + (split ? SEX(i) : 0)]++;
+  }
+  /* Eskala ez da gehienekoarekin egiten, 98. pertzentilarekin baizik:
+     hilaren lehen eguneko zutabeak zortzi aldiz luzeagoak dira, eta
+     gehienekoak gainerako urtea ezabatuko luke. Zutabe horiek mugatuta
+     marrazten dira, eta benetako kopurua puntan idazten da. */
+  const unit = new Float64Array(NWHEEL), cap = new Float64Array(NWHEEL);
+  const pool = [];
+  for (let w = 0; w < NWHEEL; w++){
+    pool.length = 0;
+    for (let d = 0; d < 366; d++){
+      const a = bucket[(w * 366 + d) * 2], c = bucket[(w * 366 + d) * 2 + 1];
+      if (a) pool.push(a);
+      if (c) pool.push(c);
+    }
+    pool.sort((x, y) => x - y);
+    const p98 = pool.length ? pool[Math.min(pool.length - 1, Math.floor(pool.length * 0.98))] : 1;
+    unit[w] = Math.min(3.2, Math.max(0.1, wh[w].room / Math.max(1, p98)));
+    cap[w]  = wh[w].room * 1.35;
+    LEN[w] = Math.max(0.55, unit[w] * 0.8);
+    LW[w]  = Math.max(0.55, (2 * Math.PI * wh[w].R / 366) * 0.86);
+  }
+  for (let w = 0; w < NWHEEL; w++)
+    for (let m = 0; m < 12; m++)
+      SPK[w * 12 + m] = bucket[(w * 366 + MSTART[m]) * 2] + bucket[(w * 366 + MSTART[m]) * 2 + 1];
+  fillK.fill(0);
+  for (let i = 0; i < N; i++){
+    const sp = SPI(i), w = WHEEL[sp], d = DAY(i);
+    const side = split ? SEX(i) : 0;
+    const idx = (w * 366 + d) * 2 + side;
+    const k = fillK[idx]++;
+    const g = wh[w];
+    const out = Math.min(cap[w], k * unit[w]);
+    const r = split && side === 1 ? g.R - Math.min(cap[w], (k + 1) * unit[w]) : g.R + out;
+    X[i] = g.cx + COS[d] * r;
+    Y[i] = g.cy + SIN[d] * r;
+  }
+  return wh;
+}
+
+/* Eszena bakoitzeko koloreak: espeziea, edo ilundua, edo tinta hutsa. */
+function palette(scene){
+  if (scene === 0) return SP_KEY.map(() => "rgba(29,26,20,.42)");
+  if (scene === 4 || scene === 5){
+    const focus = scene === 4 ? 1 : 3;
+    return SP_KEY.map((_, s) => WHEEL[s] === focus ? COLOR[s] : INK_DIM);
+  }
+  return COLOR.slice();
+}
+
+function ring(canvas, opts){
+  const o = Object.assign({ hero:false, scene:0 }, opts);
+  const ctx = canvas.getContext("2d", { alpha:true });
+  const X0 = new Float32Array(N), Y0 = new Float32Array(N);
+  const X1 = new Float32Array(N), Y1 = new Float32Array(N);
+  const Xd = new Float32Array(N), Yd = new Float32Array(N);
+  const SPK = new Float64Array(NWHEEL * 12);
+  const L0 = new Float64Array(NWHEEL), L1 = new Float64Array(NWHEEL);
+  const W0 = new Float64Array(NWHEEL), W1 = new Float64Array(NWHEEL);
+  let wh = null, w = 0, h = 0, dpr = 1, scene = o.scene, prev = o.scene;
+  let t0 = 0, dur = 0, raf = 0, ready = false;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function size(){
+    const r = canvas.getBoundingClientRect();
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = Math.max(1, Math.round(r.width)); h = Math.max(1, Math.round(r.height));
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+
+  function place(instant){
+    const b = drawBox(w, h, o.hero);
+    if (!ready || instant){
+      wh = solve(scene, b, X1, Y1, L1, W1, SPK);
+      X0.set(X1); Y0.set(Y1); L0.set(L1); W0.set(W1);
+      Xd.set(X1); Yd.set(Y1);
+      ready = true; dur = 0;
+    } else {
+      X0.set(Xd); Y0.set(Yd);
+      for (let k = 0; k < NWHEEL; k++){ L0[k] = L1[k]; W0[k] = W1[k]; }
+      wh = solve(scene, b, X1, Y1, L1, W1, SPK);
+      t0 = performance.now(); dur = reduce ? 0 : 950;
+    }
+    tick();
+  }
+
+  const ease = p => p < .5 ? 4*p*p*p : 1 - Math.pow(-2*p + 2, 3) / 2;
+
+  function paint(p){
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const colA = palette(prev), colB = palette(scene), e = ease(p);
+
+    /* Pasada bat hilaren lehen egunekoentzat eta beste bat gainerakoentzat:
+       3. eszenak lehenak bakarrik pizten ditu. */
+    const tone = (sc, col, sp, first) =>
+      sc === 3 ? (first ? COLOR[sp] : INK_DIM) : col[sp];
+
+    for (let s = 0; s < SP_KEY.length; s++){
+      const k = WHEEL[s];
+      const len = L0[k] + (L1[k] - L0[k]) * e;
+      for (let pass = 0; pass < 2; pass++){
+        const ix = pass ? BY_SP[s].one : BY_SP[s].rest;
+        if (!ix.length) continue;
+        ctx.lineWidth = W0[k] + (W1[k] - W0[k]) * e;
+        const cA = tone(prev, colA, s, pass), cB = tone(scene, colB, s, pass);
+        ctx.strokeStyle = p >= 1 ? cB : (p < .45 ? cA : cB);
+        ctx.globalAlpha = p >= 1 || p < .45 || p > .7 ? 1 : (p - .45) / .25;
+        ctx.beginPath();
+        for (let j = 0; j < ix.length; j++){
+          const i = ix[j], d = DAY(i);
+          const x = X0[i] + (X1[i] - X0[i]) * e, y = Y0[i] + (Y1[i] - Y0[i]) * e;
+          Xd[i] = x; Yd[i] = y;
+          const hx = COS[d] * len * .5, hy = SIN[d] * len * .5;
+          ctx.moveTo(x - hx, y - hy); ctx.lineTo(x + hx, y + hy);
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    if (!o.hero) chrome(p >= 1 ? 1 : Math.max(0, (p - .55) / .45));
+  }
+
+  /* Gurpilen apaingarria: hilabeteen marrak, izenak eta espeziearen etiketa. */
+  function chrome(a){
+    if (a <= 0.01 || !wh) return;
+    const big = scene <= 1 || scene === 4 || scene === 5;
+    const seen = new Set();
+    ctx.save();
+    ctx.globalAlpha = a;
+    for (let k = 0; k < NWHEEL; k++){
+      const g = wh[k], tag = g.cx + "," + g.cy + "," + g.R;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
+      const focus = scene === 4 ? 1 : scene === 5 ? 3 : -1;
+      const dim = focus >= 0 && k !== focus;
+      ctx.strokeStyle = dim ? "rgba(29,26,20,.10)" : "rgba(29,26,20,.22)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(g.cx, g.cy, g.R, 0, Math.PI * 2); ctx.stroke();
+      /* Gurpil txikietan hamabi hilabeteren izenak ez dira irakurtzen:
+         lauzpabost bakarrik idazten dira, markak hor daude beti. */
+      const every = (big && !dim) || g.R > 110 ? 1 : g.R > 46 ? 3 : 0;
+      ctx.fillStyle = dim ? "rgba(29,26,20,.30)" : "rgba(135,128,106,1)";
+      ctx.font = `${Math.max(8, Math.min(11, g.R * 0.09))}px "Spectral", Georgia, serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      for (let m = 0; m < 12; m++){
+        const d = MSTART[m], r1 = g.R - 4, r2 = g.R + 4;
+        ctx.beginPath();
+        ctx.moveTo(g.cx + COS[d] * r1, g.cy + SIN[d] * r1);
+        ctx.lineTo(g.cx + COS[d] * r2, g.cy + SIN[d] * r2);
+        ctx.stroke();
+        if (!every || (m % every)) continue;
+        const mid = (MSTART[m] + MSTART[m + 1]) / 2, rl = g.R - 15;
+        ctx.fillText(t.months[m], g.cx + COS[Math.round(mid)] * rl,
+                                  g.cy + SIN[Math.round(mid)] * rl);
+      }
+      if (scene >= 2){
+        /* 6. eszenan arrak barrurantz pilatzen dira eta erdia betetzen dute:
+           izena gurpilaren azpira joaten da orduan. */
+        ctx.fillStyle = dim ? "rgba(29,26,20,.34)" : COLOR[k];
+        ctx.font = `${Math.max(11, Math.min(20, g.R * 0.17))}px "Instrument Serif", Georgia, serif`;
+        ctx.fillText(t.sp[SP_KEY[k]], g.cx,
+                     scene === 6 ? g.cy + g.R + g.room * 1.35 + 14 : g.cy);
+      }
+      if (scene === 3 && !dim){
+        /* Hilaren lehen eguneko zutabeak moztuta daude: benetako kopurua
+           puntan idazten da, ezer ezkutatu gabe. */
+        ctx.fillStyle = COLOR[k];
+        ctx.font = `${Math.max(9, Math.min(12, g.R * 0.1))}px "Spectral", Georgia, serif`;
+        for (let m = 0; m < 12; m++){
+          const v = SPK[k * 12 + m];
+          if (v < 150 || g.R < 38) continue;
+          /* Etiketak txandaka barruago eta kanporago, ondokoekin ez talka egiteko. */
+          const d = MSTART[m], rr = g.R + g.room * 1.35 + (m % 2 ? 9 : 20);
+          ctx.fillText(num(v), g.cx + COS[d] * rr, g.cy + SIN[d] * rr);
+        }
+      }
+      if (scene === 6 && !dim && g.R > 46){
+        ctx.fillStyle = "rgba(85,80,63,1)";
+        ctx.font = `13px "Spectral", Georgia, serif`;
+        ctx.fillText("♀", g.cx, g.cy - g.R - g.room * 1.35 - 11);
+        ctx.fillText("♂", g.cx, g.cy - g.R + g.room * 0.7);
+      }
+    }
+    ctx.restore();
+  }
+
+  function tick(){
+    cancelAnimationFrame(raf);
+    const step = () => {
+      const p = dur ? Math.min(1, (performance.now() - t0) / dur) : 1;
+      paint(p);
+      if (p < 1) raf = requestAnimationFrame(step);
+      else prev = scene;
+    };
+    raf = requestAnimationFrame(step);
+  }
+
+  const api = {
+    to(next){
+      if (next === scene) return;
+      prev = scene; scene = next; place(false);
+      if (!o.hero) hud();
+    },
+    resize(){ size(); place(true); },
+    repaint(){ paint(1); },
+    get scene(){ return scene; }
+  };
+  size(); place(true);
+  return api;
+}
+
+/* HUD: animalia-kopurua eta gailurra, eszenaren arabera */
+function hud(){
+  const sc = S.scene;
+  const focus = sc === 4 ? "ardi" : sc === 5 ? "zaldi" : null;
+  const row = focus ? RAW.sp.find(x => x.k === focus) : null;
+  el("#hudN").textContent = num(sc === 3 ? RAW.round.one : row ? row.t : N);
+  let best = 0, bi = 0;
+  const m = row ? row.m : RAW.sp.reduce((a, x) => a.map((v, i) => v + x.m[i]), new Array(12).fill(0));
+  m.forEach((v, i) => { if (v > best){ best = v; bi = i; } });
+  el("#hudPeak").textContent = t.monthsLong[bi].replace(/^./, c => c.toUpperCase());
+  const lab = el("#ringCanvas");
+  if (lab) lab.setAttribute("aria-label", t.steps[sc].h + ". " + t.steps[sc].p);
+}
+
+/* ===========================================================================
+   2 · ATALAK
+=========================================================================== */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const SP_OF = k => t.sp[k] || k;
+
+/* Iturriak eskualdeen izenak gaztelaniaz dakartza. Euskarazko bertsioan
+   euskaraz ematen dira; gaztelaniazkoan iturriko izena bera da. */
+const REG_EU = {
+  "País Vasco":"Euskadi", "Navarra":"Nafarroa", "Galicia":"Galizia",
+  "Castilla y León":"Gaztela eta Leon", "Castilla la Mancha":"Gaztela-Mantxa",
+  "Valencia":"Valentzia", "Rioja":"Errioxa", "Cantabria":"Kantabria",
+  "Aragón":"Aragoi", "Asturias":"Asturias", "Andalucía":"Andaluzia",
+  "Cataluña":"Katalunia", "Extremadura":"Extremadura", "Madrid":"Madril",
+  "Francia":"Frantzia", "Murcia":"Murtzia", "Baleares":"Balearrak",
+  "Canarias":"Kanariak", "Portugal":"Portugal"
+};
+const REG = n => t.lang === "eu" ? (REG_EU[n] || n) : n;
+
+/* Hiru arraza-familiak euskaraz izendatu dira trinkotzean (iturriak izen bat
+   baino gehiago erabiltzen duelako); gaztelaniaz izen ofiziala ematen da. */
+const FAM_ES = {
+  "Mestizoak":"Mestizos",
+  "Enkarterriko astoa":"Asno de las Encartaciones",
+  "Euskal Herriko Mendiko Zaldia":"Caballo de Monte del País Vasco"
+};
+const FAM = n => t.lang === "es" ? (FAM_ES[n] || n) : n;
+const stateKey = o => o === "Crítica" ? "kritikoa" : o === "En peligro" ? "arriskuan" : "gabe";
+
+/* ----------------------------------------------------------- eszenen txartelak */
+function steps(){
+  el("#steps").innerHTML = t.steps.map((s, i) => `
+    <div class="step" data-i="${i}">
+      <div class="card">
+        ${s.n ? `<p class="big disp">${esc(s.n)}</p>` : ""}
+        <h3>${esc(s.h)}</h3>
+        <p>${esc(s.p)}</p>
+      </div>
+    </div>`).join("");
+}
+
+/* --------------------------------------------------------- katalogo ofiziala */
+function catalogue(){
+  /* Ordena: arrisku-maila ofiziala lehenik, eta maila bakoitzaren barruan
+     jaiotza gehien dituztenak lehenengo. Hala irakurleak katalogoaren logika
+     ikusten du, eta ondoan datuek dioten beste gauza. */
+  const rank = o => o === "Crítica" ? 0 : o === "En peligro" ? 1 : 2;
+  const rows = RAW.official.slice().sort((a, b) => rank(a.o) - rank(b.o) || b.t - a.t);
+  const head = `<div class="cat-row cat-head">
+      <div class="cat-name">${esc(t.cols.name)}</div>
+      <div class="cat-state">${esc(t.catCols.state)}</div>
+      <div class="cat-bars-h">${esc(t.catCols.yrs)}</div>
+      <div class="cat-n">${esc(t.catCols.births)}</div>
+    </div>`;
+  el("#cat").innerHTML = head + rows.map(o => {
+    const mx = Math.max(1, ...o.y);
+    const col = COLOR[SP_KEY.indexOf(o.sp)] || INK;
+    const bars = o.y.map((v, i) => `<span title="${RAW.years[i]}: ${num(v)}" style="height:${
+      o.t ? Math.max(3, (v / mx) * 100) : 3}%;background:${o.t ? col : "var(--ink-20)"}"></span>`).join("");
+    const d = o.y[0] ? ((o.y[2] - o.y[0]) / o.y[0]) * 100 : 0;
+    const delta = o.t
+      ? `<small>${d >= 0 ? "↑" : "↓"} ${pct(Math.abs(d), 0)}</small>`
+      : `<small>—</small>`;
+    return `<div class="cat-row${o.t ? "" : " cat-zero"}">
+      <div class="cat-name">${esc(FAM(o.n))}<i>${esc(SP_OF(o.sp))}</i></div>
+      <div class="cat-state" data-s="${stateKey(o.o)}">${esc(t.states[o.o] || o.o)}</div>
+      <div class="cat-bars">${bars}</div>
+      <div class="cat-n">${num(o.t)}${delta}</div>
+    </div>`;
+  }).join("");
+}
+
+/* ----------------------------------------------------------- arrazen taula */
+const COLDEF = [
+  { k:"name", f:r => r.n,    kind:"txt" },
+  { k:"sp",   f:r => r.sp,   kind:"txt" },
+  { k:"off",  f:r => r.o ? (r.o === "Crítica" ? 3 : r.o === "En peligro" ? 2 : 1) : 0, kind:"n" },
+  { k:"t",    f:r => r.t,    kind:"n" },
+  { k:"y23",  f:r => r.y[0], kind:"n" },
+  { k:"y24",  f:r => r.y[1], kind:"n" },
+  { k:"y25",  f:r => r.y[2], kind:"n" },
+  { k:"fem",  f:r => r.t ? r.f / r.t : 0, kind:"n" },
+  { k:"var",  f:r => r.v.length, kind:"n" },
+];
+
+function rowsNow(){
+  const q = S.q.trim().toLowerCase();
+  return RAW.fam.filter(r => {
+    if (S.filt === "kat" && !r.o) return false;
+    if (S.filt !== "all" && S.filt !== "kat" && r.sp !== S.filt) return false;
+    if (!q) return true;
+    if (FAM(r.n).toLowerCase().includes(q) || r.n.toLowerCase().includes(q)) return true;
+    return r.v.some(v => String(v[0]).toLowerCase().includes(q));
+  }).sort((a, b) => {
+    const c = COLDEF.find(x => x.k === S.sort.col) || COLDEF[3];
+    const av = c.f(a), bv = c.f(b);
+    if (c.kind === "txt") return String(av).localeCompare(String(bv), t.loc) * S.sort.dir * -1;
+    return (av - bv) * S.sort.dir;
+  });
+}
+
+function table(){
+  const rows = rowsNow(), mx = Math.max(1, ...RAW.fam.map(r => r.t));
+  const head = COLDEF.map(c => {
+    const on = S.sort.col === c.k;
+    const cls = c.kind === "n" && c.k !== "off" ? ' class="num"' : "";
+    return `<th${cls}${on ? ` aria-sort="${S.sort.dir < 0 ? "descending" : "ascending"}"` : ""}>
+      <button type="button" data-col="${c.k}">${esc(t.cols[c.k])}${on ? (S.sort.dir < 0 ? " ↓" : " ↑") : ""}</button></th>`;
+  }).join("");
+  el("#brTable").querySelector("thead").innerHTML = `<tr>${head}</tr>`;
+  const body = rows.map(r => {
+    const col = COLOR[SP_KEY.indexOf(r.sp)] || INK;
+    const tag = r.o ? `<span class="tag" data-s="${stateKey(r.o)}">${esc(t.states[r.o] || r.o)}</span>` : "";
+    return `<tr>
+      <td><span class="dot" style="background:${col}"></span>${esc(FAM(r.n))}
+        ${r.v.length ? `<i style="color:var(--ink-45);font-style:normal;font-size:.8em"> · ${esc(r.v.map(v => v[0]).join(", "))}</i>` : ""}</td>
+      <td>${esc(SP_OF(r.sp))}</td>
+      <td>${tag}</td>
+      <td class="num">${num(r.t)}<span class="bar" style="width:${(r.t / mx) * 100}%;background:${col};opacity:.5"></span></td>
+      <td class="num">${num(r.y[0])}</td>
+      <td class="num">${num(r.y[1])}</td>
+      <td class="num">${num(r.y[2])}</td>
+      <td class="num">${r.t ? pct((r.f / r.t) * 100, 1) : "—"}</td>
+      <td class="num">${r.v.length || "—"}</td>
+    </tr>`;
+  }).join("");
+  el("#brTable").querySelector("tbody").innerHTML =
+    body || `<tr><td colspan="9" style="color:var(--ink-45)">${esc(t.none)}</td></tr>`;
+  el("#qcount").textContent = rows.length === RAW.fam.length
+    ? t.count(num(rows.length)) : t.countOf(num(rows.length), num(RAW.fam.length));
+}
+
+function csv(){
+  const head = ["arraza","espeziea","81/2015","guztira","2023","2024","2025","emeak","aldaerak"];
+  const q = s => `"${String(s).replace(/"/g, '""')}"`;
+  const lines = [head.join(",")].concat(rowsNow().map(r => [
+    q(FAM(r.n)), q(SP_OF(r.sp)), q(r.o || ""), r.t, r.y[0], r.y[1], r.y[2],
+    r.t ? (r.f / r.t).toFixed(4) : "", r.v.length
+  ].join(",")));
+  const blob = new Blob(["﻿" + lines.join("\n")], { type:"text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = t.csvFile;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ---------------------------------------------------- hilabeteen grafikoa */
+function calendar(){
+  const svg = el("#cal"), sp = RAW.sp.filter(x => x.t > 50);
+  const cols = 3, rows = Math.ceil(sp.length / cols);
+  const W = 1000, PAD = 14, cw = (W - PAD * 2) / cols, chh = 154;
+  const H = PAD * 2 + rows * chh;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  let out = "";
+  sp.forEach((s, i) => {
+    const cx = PAD + (i % cols) * cw, cy = PAD + Math.floor(i / cols) * chh;
+    const iw = cw - 26, ih = chh - 54, mx = Math.max(...s.m);
+    const col = COLOR[SP_KEY.indexOf(s.k)] || INK;
+    const px = m => cx + 8 + (iw / 11) * m;
+    const py = v => cy + 34 + ih - (v / mx) * ih;
+    const pts = s.m.map((v, m) => `${px(m).toFixed(1)},${py(v).toFixed(1)}`).join(" ");
+    out += `<g>
+      <text x="${cx + 8}" y="${cy + 14}" font-family="Instrument Serif, Georgia, serif"
+        font-size="18" fill="${col}">${esc(t.sp[s.k])}</text>
+      <text x="${cx + 8}" y="${cy + 28}" font-size="10.5" fill="#87806a"
+        >${num(s.t)} · ${pct((s.f / s.t) * 100, 1)} ${esc(t.female)}</text>
+      <line x1="${cx + 8}" y1="${cy + 34 + ih}" x2="${cx + 8 + iw}" y2="${cy + 34 + ih}"
+        stroke="#cfc7b4" stroke-width="1"/>
+      <polygon points="${cx + 8},${cy + 34 + ih} ${pts} ${cx + 8 + iw},${cy + 34 + ih}"
+        fill="${col}" fill-opacity=".16"/>
+      <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.6"
+        stroke-linejoin="round"/>`;
+    s.m.forEach((v, m) => {
+      out += `<circle class="cdot" data-sp="${s.k}" data-m="${m}" cx="${px(m).toFixed(1)}"
+        cy="${py(v).toFixed(1)}" r="7" fill="transparent"/>`;
+    });
+    [0, 3, 6, 9].forEach(m => {
+      out += `<text x="${px(m).toFixed(1)}" y="${cy + 34 + ih + 14}" font-size="9.5"
+        text-anchor="middle" fill="#87806a">${esc(t.months[m])}</text>`;
+    });
+    out += `</g>`;
+  });
+  svg.innerHTML = out;
+  svg.setAttribute("aria-label", t.calTitle + ". " + sp.map(s =>
+    `${t.sp[s.k]}: ${num(s.t)}`).join("; "));
+
+  const tip = el("#tipC"), box = el("#calbox");
+  const show = (c) => {
+    const s = RAW.sp.find(x => x.k === c.dataset.sp), m = +c.dataset.m;
+    const r = box.getBoundingClientRect(), p = c.getBoundingClientRect();
+    tip.innerHTML = `<b>${esc(t.sp[s.k])}</b> · ${esc(t.monthsLong[m])}<br>${num(s.m[m])} ${esc(t.animals)}`;
+    tip.classList.add("on");
+    tip.style.left = Math.max(4, Math.min(r.width - tip.offsetWidth - 4,
+      p.left - r.left + p.width / 2 - tip.offsetWidth / 2)) + "px";
+    tip.style.top = (p.top - r.top - tip.offsetHeight - 6) + "px";
+  };
+  svg.querySelectorAll(".cdot").forEach(c => {
+    c.addEventListener("mouseenter", () => show(c));
+    c.addEventListener("mouseleave", () => tip.classList.remove("on"));
+  });
+  let ci = -1;
+  box.onkeydown = e => {
+    const all = Array.from(svg.querySelectorAll(".cdot"));
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft"){
+      ci = (ci + (e.key === "ArrowRight" ? 1 : -1) + all.length) % all.length;
+      show(all[ci]); e.preventDefault();
+    } else if (e.key === "Escape") tip.classList.remove("on");
+  };
+  box.onblur = () => tip.classList.remove("on");
+}
+
+/* ------------------------------------------------------------ mugimenduak */
+function flow(){
+  const M = RAW.move, bar = (v, mx, col) => `<i style="width:${Math.max(1, (v / mx) * 100)}%;background:${col || "var(--ink-20)"}"></i>`;
+  const named = M.sp.filter(x => SP_KEY.includes(x[0]) && x[2] >= 200);
+  const dest = M.dest.slice(0, 7), dmx = Math.max(...dest.map(d => d[2]));
+  const tmx = Math.max(...named.map(x => x[2]));
+  const medmx = Math.max(...named.map(x => x[4]));
+  const catRows = [[t.flowIn, M.cat.barrukoa], [t.flowOut, M.cat.irteera], [t.flowBack, M.cat.sarrera]];
+  const cmx = Math.max(...catRows.map(c => c[1]));
+  const card = (k, rows) => `<div class="flow-card">
+      <h3>${esc(t.flow[k].h)}</h3><p>${esc(t.flow[k].p)}</p>
+      <div class="rows">${rows}</div></div>`;
+  el("#flow").innerHTML =
+    card("a", dest.map(d => `<div><b>${esc(REG(d[0]))}</b>${bar(d[2], dmx)}<span>${num(d[2])}</span></div>`).join("")) +
+    card("b", named.map(x => {
+      const col = COLOR[SP_KEY.indexOf(x[0])];
+      return `<div><b>${esc(SP_OF(x[0]))}</b>${bar(x[3], tmx, col)}<span>${
+        pct(x[1] ? (x[3] / x[2]) * 100 : 0, 0)}</span></div>`;
+    }).join("")) +
+    card("c", named.map(x => {
+      const col = COLOR[SP_KEY.indexOf(x[0])];
+      return `<div><b>${esc(SP_OF(x[0]))}</b>${bar(x[4], medmx, col)}<span>${num(x[4])}</span></div>`;
+    }).join("")) +
+    card("d", catRows.map(c => `<div><b>${esc(c[0])}</b>${bar(c[1], cmx)}<span>${num(c[1])} ${esc(t.guides)}</span></div>`).join(""));
+}
+
+/* ---------------------------------------------------------- testu-blokeak */
+function prose(){
+  el("#prose").innerHTML = t.prose.map(p => `<p>${p}</p>`).join("");
+  el("#endBody").innerHTML = t.end.map(p => `<p>${p}</p>`).join("");
+  el("#method").innerHTML = t.method.map(m =>
+    `<section><h3>${esc(m.h)}</h3>${m.p.map(p => `<p>${p}</p>`).join("")}</section>`).join("");
+}
+
+/* ===========================================================================
+   3 · HIZKUNTZA, EGOERA ETA ABIADURA
+=========================================================================== */
+let ringMain = null, heroRing = null;
+
+function i18n(){
+  document.documentElement.lang = t.lang;
+  els("[data-i18n]").forEach(n => {
+    const v = t[n.dataset.i18n];
+    if (typeof v === "string") n.textContent = v;
+  });
+  els("[data-i18n-aria]").forEach(n => {
+    const v = t[n.dataset.i18nAria];
+    if (typeof v === "string"){ n.setAttribute("aria-label", v); if (n.tagName === "INPUT") n.placeholder = v; }
+  });
+  els("[data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === t.lang)));
+  els("[data-filt]").forEach(b => { b.querySelector("span").textContent = t.filt[b.dataset.filt]; });
+  el("#csv").querySelector("span").textContent = t.csv;
+  el("#share").querySelector("span").textContent = t.share;
+  el("#brLegend").textContent = t.brLegend;
+  el("#calLegend").textContent = t.calLegend;
+  document.title = t.title + " · " + (t.lang === "eu"
+    ? "Bizkaian jaiotzen diren abereak, banan-banan"
+    : "Las cabezas de ganado que nacen en Bizkaia, una a una");
+}
+
+function renderAll(){
+  i18n(); steps(); catalogue(); table(); calendar(); flow(); prose(); hud();
+  observe();
+  if (ringMain) ringMain.repaint();
+  if (heroRing) heroRing.repaint();
+}
+
+function setLang(l, push){
+  if (!T[l] || l === S.lang) return;
+  S.lang = l; t = T[l];
+  try { localStorage.setItem("zenbat-buru-lang", l); } catch (e) {}
+  renderAll();
+  if (push !== false) hash();
+}
+
+function hash(){
+  const p = new URLSearchParams();
+  if (S.lang !== "eu") p.set("lang", S.lang);
+  if (S.filt !== "all") p.set("f", S.filt);
+  if (S.q) p.set("q", S.q);
+  const s = p.toString();
+  history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
+}
+
+function fromHash(){
+  const p = new URLSearchParams(location.hash.replace(/^#/, ""));
+  let l = p.get("lang");
+  if (!l){ try { l = localStorage.getItem("zenbat-buru-lang"); } catch (e) {} }
+  if (!l){ l = (navigator.language || "eu").toLowerCase().startsWith("es") ? "es" : "eu"; }
+  if (T[l]) { S.lang = l; t = T[l]; }
+  const f = p.get("f");
+  if (f && (f === "kat" || f === "all" || SP_KEY.includes(f))) S.filt = f;
+  const q = p.get("q");
+  if (q) S.q = q;
+}
+
+/* --------------------------------------------------------------- behatzailea */
+let io = null;
+function observe(){
+  if (io) io.disconnect();
+  io = new IntersectionObserver(ent => {
+    ent.forEach(e => {
+      if (!e.isIntersecting) return;
+      const i = +e.target.dataset.i;
+      if (i === S.scene) return;
+      S.scene = i;
+      if (ringMain) ringMain.to(i);
+      hud();
+    });
+  }, { rootMargin: "-45% 0px -45% 0px", threshold: 0 });
+  els(".step").forEach(s => io.observe(s));
+}
+
+/* ------------------------------------------------------------------ gertaerak */
+function wire(){
+  els("[data-lang]").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+  els("[data-filt]").forEach(b => b.addEventListener("click", () => {
+    S.filt = b.dataset.filt;
+    els("[data-filt]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    table(); hash();
+  }));
+
+  const q = el("#q");
+  q.value = S.q;
+  let qt = 0;
+  q.addEventListener("input", () => {
+    S.q = q.value;
+    clearTimeout(qt); qt = setTimeout(() => { table(); hash(); }, 110);
+  });
+  el("#qclear").addEventListener("click", () => { q.value = ""; S.q = ""; table(); hash(); q.focus(); });
+
+  el("#brTable").addEventListener("click", e => {
+    const b = e.target.closest("button[data-col]");
+    if (!b) return;
+    const c = b.dataset.col;
+    if (S.sort.col === c) S.sort.dir *= -1;
+    else S.sort = { col: c, dir: c === "name" || c === "sp" ? 1 : -1 };
+    table();
+  });
+
+  el("#csv").addEventListener("click", csv);
+
+  el("#share").addEventListener("click", async () => {
+    const url = location.href;
+    try {
+      if (navigator.share) await navigator.share({ title: t.title, url });
+      else { await navigator.clipboard.writeText(url);
+        const s = el("#share").querySelector("span"), old = s.textContent;
+        s.textContent = t.shared; setTimeout(() => { s.textContent = old; }, 1600); }
+    } catch (e) {}
+  });
+
+  let rt = 0;
+  const onResize = () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      if (ringMain) ringMain.resize();
+      if (heroRing) heroRing.resize();
+      calendar();
+    }, 140);
+  };
+  addEventListener("resize", onResize);
+  addEventListener("orientationchange", onResize);
+  if (window.ResizeObserver){
+    const ro = new ResizeObserver(onResize);
+    ro.observe(el("#ringCanvas")); ro.observe(el("#heroCanvas"));
+  }
+}
+
+/* ---------------------------------------------------------------- abiatzea */
+function boot(){
+  fromHash();
+  renderAll();
+  els("[data-filt]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.filt === S.filt)));
+  heroRing = ring(el("#heroCanvas"), { hero:true, scene:1 });
+  ringMain = ring(el("#ringCanvas"), { hero:false, scene:0 });
+  hud();
+  wire();
+  observe();
+}
+
+if (document.readyState === "loading") addEventListener("DOMContentLoaded", boot);
+else boot();
+
+})();
+</script>

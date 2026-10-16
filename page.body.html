@@ -1,0 +1,158 @@
+<a class="skip" href="#main" data-i18n="skip"></a>
+
+<!-- JavaScriptik gabe eraztuna ez dago, baina albistea bai: berria ez da
+     inoiz JavaScript bat. -->
+<noscript>
+  <div class="nojs">
+    <p><b>Zenbat buru?</b> Bizkaian 84.034 abere jaio eta erregistratu dira hiru urtean (2023–2025): 50.194 behi, 22.122 ardi, 5.644 ahuntz, 5.403 zaldi eta 663 asto. Espezie bakoitzak bere egutegia du: arkumeen % 58,3 urtarrilean eta otsailean jaiotzen da, moxalen % 60,8 apirilean eta maiatzean. Guztira 92 arraza-familia daude, baina bakar batek — mestizoek — 31.868 abere biltzen ditu. Euskal Arraza Autoktonoen Katalogo Ofizialean (81/2015 Dekretua) dauden hamalau abere-arrazatatik hamaikak dute jaiotzarik erregistroan: betizuak 117 hiru urtean, Enkarterriko astoak 185, pottokak 428. Azpigorri ahuntza, katalogoak «kritiko» gisa jotzen duena, 698tik 337ra jaitsi da bi urtean. Eta erregistratutako arkumeen %90,9 emeak dira: biologiak ez du hori egiten, erregistroak baizik.</p>
+    <p><b>¿Cuántas cabezas?</b> En Bizkaia han nacido y se han registrado 84.034 cabezas de ganado en tres años (2023–2025): 50.194 bovinos, 22.122 ovinos, 5.644 caprinos, 5.403 equinos y 663 asnos. Cada especie tiene su calendario: el 58,3 % de los corderos nace en enero y febrero, el 60,8 % de los potros en abril y mayo. Hay 92 familias de razas, pero una sola —los mestizos— reúne 31.868 cabezas. De las catorce razas ganaderas del Catálogo Oficial de Razas Animales Autóctonas Vascas (Decreto 81/2015), once tienen nacimientos en el registro: 117 betizu en tres años, 185 asnos de las Encartaciones, 428 pottokas. La cabra Azpigorri, que el catálogo considera «crítica», ha caído de 698 a 337 en dos años. Y el 90,9 % de los corderos registrados son hembras: eso no lo hace la biología, lo hace el registro.</p>
+    <p>Iturria / Fuente: <a href="https://www.opendatabizkaia.eus/es/catalogo/explotaciones-ganaderas">Open Data Bizkaia · explotaciones-ganaderas</a>. Eraztunak, taulak eta bilatzaileak JavaScript behar dute. · El anillo, las tablas y el buscador necesitan JavaScript.</p>
+  </div>
+</noscript>
+
+<!-- ===================== GOIBURUA ===================================== -->
+<header class="hero">
+  <canvas id="heroCanvas" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <div class="hero-bar">
+      <span class="brand" data-i18n="brand"></span>
+      <div class="seg" role="group" aria-label="Hizkuntza / Idioma">
+        <button type="button" data-lang="eu" aria-pressed="true"><span>Euskaraz</span></button>
+        <button type="button" data-lang="es" aria-pressed="false"><span>Castellano</span></button>
+      </div>
+    </div>
+
+    <div class="hero-mid">
+      <p class="figure">84.034<small data-i18n="figureUnit"></small></p>
+      <h1 data-i18n="title"></h1>
+      <p class="stand" data-i18n="stand"></p>
+    </div>
+
+    <div class="hero-foot">
+      <span data-i18n="dateline"></span>
+      <span class="cue"><i></i><span data-i18n="cue"></span></span>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ===================== ESZENA: ERAZTUNA ============================= -->
+<section class="stage" id="stage" aria-labelledby="stageH">
+  <h2 id="stageH" class="skip" data-i18n="stageTitle"></h2>
+
+  <div class="stage-gfx">
+    <canvas id="ringCanvas" role="img" aria-label=""></canvas>
+    <div class="stage-hud">
+      <dl>
+        <div><dt data-i18n="rN"></dt><dd id="hudN"></dd></div>
+        <div><dt data-i18n="rPeak"></dt><dd id="hudPeak"></dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="steps" id="steps"></div>
+</section>
+
+<!-- ===================== IRAKURKETA =================================== -->
+<section class="page-sec page-sec--line">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="proseKicker"></p>
+    <h2 data-i18n="proseTitle"></h2>
+    <p class="pull disp" data-i18n="pull"></p>
+    <div class="prose" id="prose"></div>
+  </div>
+</section>
+
+<!-- ===================== KATALOGO OFIZIALA =========================== -->
+<section class="page-sec page-sec--pale" aria-labelledby="catH">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="catKicker"></p>
+    <h2 id="catH" data-i18n="catTitle"></h2>
+    <p class="lede" data-i18n="catLede"></p>
+    <div class="cat" id="cat"></div>
+    <p class="warn" data-i18n="catWarn"></p>
+  </div>
+</section>
+
+<!-- ===================== ARRAZAK: BILATZAILEA ======================== -->
+<section class="page-sec">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="findKicker"></p>
+    <h2 data-i18n="findTitle"></h2>
+    <p class="lede" data-i18n="findLede"></p>
+    <div class="search">
+      <div class="field">
+        <input type="text" id="q" autocomplete="off" spellcheck="false" data-i18n-aria="ariaSearch">
+        <button type="button" id="qclear" data-i18n-aria="ariaClear">&times;</button>
+      </div>
+      <div class="seg" role="group" data-i18n-aria="ariaFilt">
+        <button type="button" data-filt="all" aria-pressed="true"><span></span></button>
+        <button type="button" data-filt="behi" aria-pressed="false"><span></span></button>
+        <button type="button" data-filt="ardi" aria-pressed="false"><span></span></button>
+        <button type="button" data-filt="ahuntz" aria-pressed="false"><span></span></button>
+        <button type="button" data-filt="zaldi" aria-pressed="false"><span></span></button>
+        <button type="button" data-filt="kat" aria-pressed="false"><span></span></button>
+      </div>
+      <button type="button" class="ghost" id="csv"><span></span></button>
+    </div>
+    <p class="hint" id="qcount"></p>
+    <div class="tbl" style="max-height:520px"><table id="brTable"><thead></thead><tbody></tbody></table></div>
+    <div class="legend" id="brLegend"></div>
+  </div>
+</section>
+
+<!-- ===================== URTEKO EGUTEGIA (SVG) ======================== -->
+<section class="page-sec page-sec--pale">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="calKicker"></p>
+    <h2 data-i18n="calTitle"></h2>
+    <p class="lede" data-i18n="calLede"></p>
+    <div class="chartbox" id="calbox" tabindex="0">
+      <svg id="cal" class="chart" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet" role="img"></svg>
+      <div class="tip" id="tipC" role="status"></div>
+    </div>
+    <div class="legend" id="calLegend"></div>
+  </div>
+</section>
+
+<!-- ===================== MUGIMENDUAK ================================= -->
+<section class="page-sec" aria-labelledby="moveH">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="moveKicker"></p>
+    <h2 id="moveH" data-i18n="moveTitle"></h2>
+    <p class="lede" data-i18n="moveLede"></p>
+    <div class="flow" id="flow"></div>
+    <p class="warn" data-i18n="moveWarn"></p>
+  </div>
+</section>
+
+<!-- ===================== AMAIERA ====================================== -->
+<section class="page-sec page-sec--end" aria-labelledby="endH">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="endKicker"></p>
+    <h2 id="endH" data-i18n="endTitle"></h2>
+    <div class="prose" id="endBody"></div>
+    <p class="endline disp" data-i18n="endLine"></p>
+  </div>
+</section>
+
+<!-- ===================== METODOLOGIA ================================== -->
+<section class="page-sec page-sec--line">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="methodKicker"></p>
+    <h2 data-i18n="methodTitle"></h2>
+    <div class="mgrid" id="method"></div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span class="disp">84.034</span>
+    <span class="by" data-i18n="footBy"></span>
+    <span data-i18n="footSource"></span>
+    <button type="button" class="ghost" id="share"><span></span></button>
+  </div>
+</footer>

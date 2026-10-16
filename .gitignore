@@ -1,0 +1,6 @@
+# Tarteko fitxategiak: 147 MB guztira, APItik jaitsitako erantzun gordinak.
+# `build.py`-k berriro sortzen ditu, eta `compact.py`-k trinkotzen.
+data/raw-*.json
+
+# Python-en cachea
+__pycache__/
